@@ -23,7 +23,20 @@ BEGIN {
 
 =head1 SYNOPSIS
  
-    TO BE COMPLETED
+    use ORDB::Unihan;
+    
+    # dbh way
+    my $dbh = ORDB::Unihan->dbh;
+    my $sql = 'SELECT val FROM unihan WHERE hex = 3402 AND type="RSUnicode"';
+    my $sth = $dbh->prepare($sql);
+    
+    # simple way
+    ORDB::Unihan->selectrow_array($statement);
+    
+    # or ORLite way
+    my $vals = ORDB::Unihan::Unihan->select(
+        'where hex = ?', '3402'
+    );
 
 =head1 DESCRIPTION
 
@@ -31,11 +44,53 @@ TO BE COMPLETED
 
 =head2 METHODS
 
-perldoc L<ORLite>
+perldoc L<ORLite>, plus
+
+=over 4
+
+=item * sqlite_path
+
+    my $sqlite_path = ORDB::Unihan->sqlite_path();
+
+where the Unihan.sqlite is
+
+=back
+
+=head2 TABLE
+
+  CREATE TABLE unihan (
+    "hex" CHAR(5) NOT NULL,
+    "type" VARCHAR(18) NOT NULL,
+    "val" VARCHAR(255),
+    PRIMARY KEY ("hex", "type")
+  )
+
+=over 4
+
+=item B<hex>
+
+the Unicode scalar value as U+[x]xxxx. 'hex' is [x]xxxx without U+
+
+=item B<type>
+
+one of Cangjie, Cantonese, CihaiT, Cowles, Definition, HanYu, IRGHanyuDaZidian, IRGKangXi, IRG_GSource, IRG_JSource, IRG_TSource, Mandarin, Matthews, OtherNumeric, Phonetic, RSAdobe_Japan1_6, RSUnicode, SemanticVariant, Matthews, TotalStrokes
+
+=item B<val>
+
+the value for C<hex> and C<type>
 
 =cut
 
 my $url = 'http://www.unicode.org/Public/UNIDATA/Unihan.zip';
+
+sub dir {
+    File::Spec->catdir(
+		File::HomeDir->my_data,
+		($^O eq 'MSWin32' ? 'Perl' : '.perl'),
+		'ORDB-Unihan',
+	);
+}
+sub sqlite_path { File::Spec->catfile( dir(), 'Unihan.sqlite' ) }
 
 sub import {
     my $self = shift;
@@ -56,17 +111,13 @@ sub import {
 
     # where we save .sqlite to?
     # Determine the database directory
-	my $dir = File::Spec->catdir(
-		File::HomeDir->my_data,
-		($^O eq 'MSWin32' ? 'Perl' : '.perl'),
-		'ORDB-Unihan',
-	);
+	my $dir = dir();
     # Create it if needed
 	unless ( -e $dir ) {
 		File::Path::mkpath( $dir, { verbose => 0 } );
 	}
 	# Determine the mirror database file
-	my $db = File::Spec->catfile( $dir, 'Unihan.sqlite' );
+	my $db = sqlite_path();
 	my $zip_path = File::Spec->catfile( $dir, 'Unihan.zip' );
 
     # Create the default useragent
@@ -123,7 +174,8 @@ sub import {
 		$regenerated_sqlite = 1;
     }
     # Extract .txt file
-    if ( $regenerated_sqlite or ! -e File::Spec->catfile( $dir, 'Unihan.txt' ) ) {
+    my $txt_path = File::Spec->catfile( $dir, 'Unihan.txt' );
+    if ( $regenerated_sqlite or ! -e $txt_path ) {
         print "Extract $zip_path to $dir\n" if $DEBUG;
         require Archive::Extract;
         my $ae = Archive::Extract->new( archive => $zip_path );
@@ -142,7 +194,29 @@ sub import {
 	        RaiseError => 1,
 		    PrintError => 1,
 	    } );
+        $dbh->do(<<'SQL');
         
+  CREATE TABLE unihan (
+    "hex" CHAR(5) NOT NULL,
+    "type" VARCHAR(18) NOT NULL,
+    "val" VARCHAR(255),
+    PRIMARY KEY ("hex", "type")
+  )
+SQL
+        my $sql = 'INSERT INTO "unihan" ("hex", "type", "val") VALUES (?, ?, ?)';
+        my $sth = $dbh->prepare($sql);
+        open(my $fh, '<', $txt_path);
+        flock($fh, 1);
+        while (my $line = <$fh>) {
+            next if ( $line =~ /^\#/ ); # comment line
+            next if ( $line =~ /^\s+$/ ); # blank line
+            chomp($line);
+            my ( $hex, $type, $val ) = split(/\t/, $line, 3);
+            $hex =~ s/^U\+//;
+            $type =~ s/^k//;
+            $val =~ s/(^\s|\s+)//g;
+            $sth->execute( $hex, $type, $val ) or die "$dbh:errstr $type, $hex, $val";
+        }
     }
     
 	$params{file}     = $db;
