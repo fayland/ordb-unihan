@@ -3,7 +3,7 @@
 use Test::More tests => 1;
 
 BEGIN {
-    use_ok('ORDB::Unihan');
+    require_ok('ORDB::Unihan');
 }
 
 diag(
