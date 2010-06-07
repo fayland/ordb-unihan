@@ -138,8 +138,8 @@ sub import {
         if ( open(my $fh, '<', $last_mod_file) ) {
             flock($fh, 1);
             $last_mod_local = <$fh>;
-            $last_mod_local ||= 0;
             chomp($last_mod_local);
+            $last_mod_local ||= 0;
             close($fh);
         }
         
@@ -148,7 +148,7 @@ sub import {
         if ( $last_mod_local eq $last_mod ) {
             $need_refetch = 0;
         } else {
-            print "Unihan.zip last-modified $last_mod, we have $last_mod_local\n" if $DEBUG;
+            print STDERR "Unihan.zip last-modified $last_mod, we have $last_mod_local\n" if $DEBUG;
             open(my $fh, '>', $last_mod_file);
             flock($fh, 2);
             print $fh $last_mod;
@@ -165,7 +165,7 @@ sub import {
     # refetch the .zip
     my $regenerated_sqlite = 0;
     if ( $need_refetch or ! -e $zip_path ) {
-        print "Mirror $url to $zip_path\n" if $DEBUG;
+        print STDERR "Mirror $url to $zip_path\n" if $DEBUG;
         # Fetch the archive
 		my $response = $useragent->mirror( $url => $zip_path );
 		unless ( $response->is_success or $response->code == 304 ) {
@@ -174,19 +174,18 @@ sub import {
 		$regenerated_sqlite = 1;
     }
     # Extract .txt file
-    my $txt_path = File::Spec->catfile( $dir, 'Unihan.txt' );
+    my $txt_path = File::Spec->catfile( $dir, 'Unihan_Readings.txt' );
     if ( $regenerated_sqlite or ! -e $txt_path ) {
-        print "Extract $zip_path to $dir\n" if $DEBUG;
+        print STDERR "Extract $zip_path to $dir\n" if $DEBUG;
         require Archive::Extract;
         my $ae = Archive::Extract->new( archive => $zip_path );
         my $ok = $ae->extract( to => $dir );
         unless ( $ok ) {
             Carp::croak("Error: Failed to read .zip");
         }
-        unless ( -e File::Spec->catfile( $dir, 'Unihan.txt' ) ) {
+        unless ( -e $txt_path ) {
             Carp::croak("Error: Failed to extract .zip");
         }
-        
     }
     # regenerate the .sqlite
     if ( $regenerated_sqlite or ! -e $db ) {
@@ -205,17 +204,26 @@ sub import {
 SQL
         my $sql = 'INSERT INTO "unihan" ("hex", "type", "val") VALUES (?, ?, ?)';
         my $sth = $dbh->prepare($sql);
-        open(my $fh, '<', $txt_path);
-        flock($fh, 1);
-        while (my $line = <$fh>) {
-            next if ( $line =~ /^\#/ ); # comment line
-            next if ( $line =~ /^\s+$/ ); # blank line
-            chomp($line);
-            my ( $hex, $type, $val ) = split(/\t/, $line, 3);
-            $hex =~ s/^U\+//;
-            $type =~ s/^k//;
-            $val =~ s/(^\s|\s+)//g;
-            $sth->execute( $hex, $type, $val ) or die "$dbh:errstr $type, $hex, $val";
+        
+        opendir(my $fdir, $dir) ;
+        my @files = grep {/.txt$/} readdir($fdir);
+        closedir($fdir);
+        foreach my $file (@files) {
+            next if $file eq 'last_mod.txt';
+            print STDERR "Populate $dir/$file\n" if $DEBUG;
+            open(my $fh, '<:utf8', "$dir/$file");
+            flock($fh, 1);
+            while (my $line = <$fh>) {
+                next if ( $line =~ /^\#/ ); # comment line
+                next if ( $line =~ /^\s+$/ ); # blank line
+                chomp($line);
+                my ( $hex, $type, $val ) = split(/\t/, $line, 3);
+                $hex =~ s/^U\+//;
+                $type =~ s/^k//;
+                $val =~ s/(^\s|\s+)//g;
+                $sth->execute( $hex, $type, $val ) or die "$dbh:errstr $type, $hex, $val";
+            }
+            close($fh);
         }
     }
     

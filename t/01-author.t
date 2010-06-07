@@ -7,7 +7,7 @@ BEGIN {
     plan tests => 4;
 }
 
-use ORDB::Unihan;
+use ORDB::Unihan '-DEBUG';
 
 my $sqlite_path = ORDB::Unihan->sqlite_path();
 diag("debug $sqlite_path");
