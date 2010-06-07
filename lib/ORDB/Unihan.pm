@@ -174,6 +174,8 @@ sub import {
 		$regenerated_sqlite = 1;
     }
     # Extract .txt file
+    my $old_txt_file = File::Spec->catfile( $dir, 'Unihan.txt' );
+    unlink($old_txt_file) if -e $old_txt_file;
     my $txt_path = File::Spec->catfile( $dir, 'Unihan_Readings.txt' );
     if ( $regenerated_sqlite or ! -e $txt_path ) {
         print STDERR "Extract $zip_path to $dir\n" if $DEBUG;
