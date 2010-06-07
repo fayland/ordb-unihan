@@ -189,12 +189,12 @@ sub import {
     }
     # regenerate the .sqlite
     if ( $regenerated_sqlite or ! -e $db ) {
+        unlink($db);
         my $dbh = DBI->connect("DBI:SQLite:$db", undef, undef, {
 	        RaiseError => 1,
 		    PrintError => 1,
 	    } );
         $dbh->do(<<'SQL');
-        
   CREATE TABLE unihan (
     "hex" CHAR(5) NOT NULL,
     "type" VARCHAR(18) NOT NULL,
