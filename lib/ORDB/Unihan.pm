@@ -1,6 +1,6 @@
 package ORDB::Unihan;
 
-# ABSTRACT: An ORM for the published Unihan database 
+# ABSTRACT: An ORM for the published Unihan database
 
 use strict;
 use warnings;
@@ -22,17 +22,17 @@ BEGIN {
 =pod
 
 =head1 SYNOPSIS
- 
+
     use ORDB::Unihan;
-    
+
     # dbh way
     my $dbh = ORDB::Unihan->dbh;
     my $sql = 'SELECT val FROM unihan WHERE hex = 3402 AND type="RSUnicode"';
     my $sth = $dbh->prepare($sql);
-    
+
     # simple way
     ORDB::Unihan->selectrow_array($statement);
-    
+
     # or ORLite way
     my $vals = ORDB::Unihan::Unihan->select(
         'where hex = ?', '3402'
@@ -142,7 +142,7 @@ sub import {
             $last_mod_local ||= 0;
             close($fh);
         }
-        
+
         my $res = $useragent->head($url);
         my $last_mod = $res->header('last-modified');
         if ( $last_mod_local eq $last_mod ) {
@@ -196,6 +196,10 @@ sub import {
 	        RaiseError => 1,
 		    PrintError => 1,
 	    } );
+	    $dbh->do('PRAGMA synchronous=OFF');
+        $dbh->do('PRAGMA count_changes=OFF');
+        $dbh->do('PRAGMA journal_mode=MEMORY');
+        $dbh->do('PRAGMA temp_store=MEMORY');
         $dbh->do(<<'SQL');
   CREATE TABLE unihan (
     "hex" CHAR(5) NOT NULL,
@@ -206,7 +210,7 @@ sub import {
 SQL
         my $sql = 'INSERT INTO "unihan" ("hex", "type", "val") VALUES (?, ?, ?)';
         my $sth = $dbh->prepare($sql);
-        
+
         opendir(my $fdir, $dir) ;
         my @files = grep {/.txt$/} readdir($fdir);
         closedir($fdir);
@@ -228,10 +232,10 @@ SQL
             close($fh);
         }
     }
-    
+
 	$params{file}     = $db;
 	$params{readonly} = 1;
-	
+
 	# Hand off to the main ORLite class.
 	$class->SUPER::import(
 		\%params,
